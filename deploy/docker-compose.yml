@@ -1,0 +1,126 @@
+# 生产部署：app（页面 + API + Agent）与 sandbox（Python 执行）两个容器。
+#   cp deploy/.env.example deploy/.env  # 修改口令与密钥
+#   docker compose -f deploy/docker-compose.yml up -d --build
+# 想先用 mock 数据体验：加上 --profile mock（四种数据库，连接方式见下方 mock 服务的注释）
+# 启用联邦查询（跨引擎一条 SQL 关联）：加上 --profile federation，并在 .env 里设置 DA_TRINO_URL
+name: data-analyze
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: data-analyze-app:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DA_SANDBOX_URL: http://sandbox:8901
+    ports:
+      - "${DA_PUBLIC_PORT:-8180}:8000"
+    volumes:
+      - app-data:/data
+      - workspaces:/workspaces
+    networks: [default, sandbox]
+    depends_on: [sandbox]
+
+  sandbox:
+    build: ../sandbox
+    image: data-analyze-sandbox:latest
+    restart: unless-stopped
+    environment:
+      SANDBOX_MAX_CONCURRENT: "4"
+      SANDBOX_MEMORY_MB: "2048"
+    # 不挂任何数据卷：每次执行由 app 把本会话的文件传进来，跑完传回去
+    # 只在内部网络上：连不到公网，也连不到业务数据库，只有 app 能访问它
+    networks: [sandbox]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+      - /jobs:size=2g,mode=0711
+    # tini 做 1 号进程，回收脚本留下的孤儿进程（否则僵尸进程会占满进程数配额）
+    init: true
+    cap_drop: [ALL]
+    # 只为给每个任务切换独立 uid、整理任务目录
+    cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 4g
+    cpus: 2
+
+  # ---- 联邦查询引擎（--profile federation），同时在 .env 里设置 DA_TRINO_URL=http://trino:8080 ----
+  # 不对外暴露端口；catalog 由 app 动态同步（只在内存里，不落盘）
+  trino:
+    profiles: [federation]
+    image: trinodb/trino:484
+    restart: unless-stopped
+    volumes:
+      - ./trino/etc/config.properties:/etc/trino/config.properties:ro
+      - ./trino/etc/access-control.properties:/etc/trino/access-control.properties:ro
+      - ./trino/etc/rules.json:/etc/trino/rules.json:ro
+      - ./trino/etc/catalog:/etc/trino/catalog:ro
+    mem_limit: 4g
+
+  # ---- 以下为 mock 业务库（--profile mock），各库只读账号 analyst / analyst_ro_2026 ----
+  # 在「设置 → 数据源」里填：mock-mysql:3306（库 shop、wms）、mock-postgres:5432（库 crm）、
+  # mock-clickhouse:8123（库 events）、mock-mongo:27017（库 service）
+  mock-mysql:
+    profiles: [mock]
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MOCK_ROOT_PASSWORD:-change_me_root}
+      TZ: Asia/Shanghai
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    volumes:
+      - ./mock/mysql/init:/docker-entrypoint-initdb.d:ro
+      - mock-mysql-data:/var/lib/mysql
+
+  mock-postgres:
+    profiles: [mock]
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${MOCK_ROOT_PASSWORD:-change_me_root}
+      POSTGRES_DB: crm
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mock/postgres/init:/docker-entrypoint-initdb.d:ro
+      - mock-postgres-data:/var/lib/postgresql
+
+  mock-clickhouse:
+    profiles: [mock]
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: ${MOCK_ROOT_PASSWORD:-change_me_root}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      TZ: Asia/Shanghai
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - ./mock/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - mock-clickhouse-data:/var/lib/clickhouse
+
+  mock-mongo:
+    profiles: [mock]
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MOCK_ROOT_PASSWORD:-change_me_root}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mock/mongo/init:/docker-entrypoint-initdb.d:ro
+      - mock-mongo-data:/data/db
+
+networks:
+  sandbox:
+    internal: true
+
+volumes:
+  app-data:
+  workspaces:
+  mock-mysql-data:
+  mock-postgres-data:
+  mock-clickhouse-data:
+  mock-mongo-data:

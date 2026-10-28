@@ -1,0 +1,87 @@
+# 本地开发依赖：四种 mock 业务库 + Python 沙箱。后端、前端在本机直接跑（见 README）。
+# 各库只读账号统一为 analyst / analyst_ro_2026
+#   MySQL       127.0.0.1:13306  库 shop、wms（同一实例，可跨库 JOIN）
+#   PostgreSQL  127.0.0.1:15442  库 crm（schema public、marketing）
+#   ClickHouse  127.0.0.1:18123  库 events（HTTP 端口）
+#   MongoDB     127.0.0.1:27018  库 service（认证库 service）
+#   Trino       127.0.0.1:18090  联邦查询引擎（后端 DA_TRINO_URL=http://127.0.0.1:18090）
+name: data-analyze-dev
+services:
+  mock-mysql:
+    image: mysql:8.4
+    container_name: data-analyze-mock-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_only
+      TZ: Asia/Shanghai
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    ports: ["127.0.0.1:13306:3306"]
+    volumes:
+      - ./mock/mysql/init:/docker-entrypoint-initdb.d:ro
+      - mock-mysql-data:/var/lib/mysql
+
+  mock-postgres:
+    image: postgres:18
+    container_name: data-analyze-mock-postgres
+    environment:
+      POSTGRES_PASSWORD: root_dev_only
+      POSTGRES_DB: crm
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:15442:5432"]
+    volumes:
+      - ./mock/postgres/init:/docker-entrypoint-initdb.d:ro
+      - mock-postgres-data:/var/lib/postgresql
+
+  mock-clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: data-analyze-mock-clickhouse
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: root_dev_only
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      TZ: Asia/Shanghai
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    ports: ["127.0.0.1:18123:8123"]
+    volumes:
+      - ./mock/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - mock-clickhouse-data:/var/lib/clickhouse
+
+  mock-mongo:
+    image: mongo:8.0
+    container_name: data-analyze-mock-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_dev_only
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:27018:27017"]
+    volumes:
+      - ./mock/mongo/init:/docker-entrypoint-initdb.d:ro
+      - mock-mongo-data:/data/db
+
+  # 联邦查询引擎。本地开发时数据源配的是 127.0.0.1，后端用 DA_TRINO_HOST_ALIASES 把它换成 host.docker.internal
+  trino:
+    image: trinodb/trino:484
+    container_name: data-analyze-trino-dev
+    ports: ["127.0.0.1:18090:8080"]
+    volumes:
+      - ./trino/etc/config.properties:/etc/trino/config.properties:ro
+      - ./trino/etc/access-control.properties:/etc/trino/access-control.properties:ro
+      - ./trino/etc/rules.json:/etc/trino/rules.json:ro
+      - ./trino/etc/catalog:/etc/trino/catalog:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  sandbox:
+    build: ../sandbox
+    container_name: data-analyze-sandbox-dev
+    ports: ["127.0.0.1:8901:8901"]
+    tmpfs:
+      - /jobs:size=2g,mode=0711
+    init: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+
+volumes:
+  mock-mysql-data:
+  mock-postgres-data:
+  mock-clickhouse-data:
+  mock-mongo-data:

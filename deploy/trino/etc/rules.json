@@ -1,0 +1,11 @@
+{
+  "catalogs": [
+    {"user": "platform", "allow": "owner"},
+    {"user": "agent", "catalog": "system", "allow": "none"},
+    {"user": "agent", "allow": "read-only"}
+  ],
+  "queries": [
+    {"user": "platform", "allow": ["execute", "kill", "view"]},
+    {"user": "agent", "allow": ["execute"]}
+  ]
+}
