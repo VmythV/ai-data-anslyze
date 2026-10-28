@@ -1,0 +1,5 @@
+{
+  "name": "analyst",
+  "version": "0.1.0",
+  "description": "数据分析助手的内置技能：数据探查、SQL 分析、Python 分析、图表设计、报告撰写"
+}

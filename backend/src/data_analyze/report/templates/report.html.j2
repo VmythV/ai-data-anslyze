@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --text: #0b0b0b; --text2: #52514e; --muted: #898781;
+  --hair: #e1e0d9; --ring: rgba(11,11,11,.08); --accent: #2a78d6; --good: #006300; --bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --text: #f0efec; --text2: #c3c2b7; --muted: #898781;
+    --hair: #2c2c2a; --ring: rgba(255,255,255,.08); --accent: #3987e5; --good: #0ca30c; --bad: #e66767; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text);
+  font: 15px/1.7 {{ font|safe }}; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 64px; }
+header { margin-bottom: 32px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+h1 { font-size: 30px; line-height: 1.25; margin: 8px 0 6px; font-weight: 650; letter-spacing: -.01em; }
+.subtitle { color: var(--text2); margin: 0; }
+.meta { color: var(--muted); font-size: 13px; margin-top: 12px; }
+.card { background: var(--surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--ring);
+  padding: 20px 24px; margin-bottom: 20px; }
+.summary { border-left: 3px solid var(--accent); }
+.summary h2, .section-title { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 8px;
+  letter-spacing: .04em; }
+.md p { margin: .4em 0; } .md ul, .md ol { padding-left: 1.3em; margin: .4em 0; }
+.md li { margin: .2em 0; } .md strong { font-weight: 650; }
+.md h1, .md h2, .md h3 { font-size: 17px; margin: 1em 0 .4em; }
+.md table { border-collapse: collapse; } .md td, .md th { border-bottom: 1px solid var(--hair); padding: 4px 10px; }
+.md code { font-size: 13px; background: var(--page); padding: 1px 5px; border-radius: 4px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.kpi { background: var(--surface); border-radius: 14px; box-shadow: 0 0 0 1px var(--ring); padding: 18px 20px; }
+.kpi .label { color: var(--text2); font-size: 13px; }
+.kpi .value { font-size: 30px; font-weight: 650; line-height: 1.2; margin: 6px 0 4px; letter-spacing: -.01em; }
+.kpi .delta { font-size: 13px; font-weight: 600; }
+.kpi .delta.good { color: var(--good); } .kpi .delta.bad { color: var(--bad); } .kpi .delta.neutral { color: var(--text2); }
+.kpi .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.chart-card h3 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+.caption { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.chart { width: 100%; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.data th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 12px;
+  border-bottom: 1px solid var(--hair); white-space: nowrap; }
+table.data td { padding: 7px 12px; border-bottom: 1px solid var(--hair); white-space: nowrap; }
+table.data td.num { text-align: right; } table.data th.num { text-align: right; }
+table.data tr:last-child td { border-bottom: 0; }
+.more { color: var(--muted); font-size: 12px; margin-top: 8px; }
+footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 40px; }
+@media (max-width: 640px) { .wrap { padding: 28px 16px 48px; } h1 { font-size: 24px; } .card { padding: 16px; } }
+@media print { body { background: #fff; } .card, .kpi { box-shadow: 0 0 0 1px #ddd; break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">数据分析报告</div>
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
+    <div class="meta">数据源：{{ datasource }} · 生成于 {{ generated_at }}</div>
+  </header>
+
+  {% if summary_html %}
+  <section class="card summary">
+    <h2>核心结论</h2>
+    <div class="md">{{ summary_html|safe }}</div>
+  </section>
+  {% endif %}
+
+  {% for s in sections %}
+    {% if s.type == "markdown" %}
+    <section class="card">{% if s.title %}<div class="section-title">{{ s.title }}</div>{% endif %}<div class="md">{{ s.html|safe }}</div></section>
+    {% elif s.type == "kpis" %}
+    <section class="kpis">
+      {% for k in s["items"] %}
+      <div class="kpi">
+        <div class="label">{{ k.label }}</div>
+        <div class="value">{{ k.value }}</div>
+        {% if k.delta %}<div class="delta {{ k.tone }}">{{ k.arrow }} {{ k.delta }}</div>{% endif %}
+        {% if k.note %}<div class="note">{{ k.note }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% elif s.type == "chart" %}
+    <section class="card chart-card">
+      <h3>{{ s.title }}</h3>
+      {% if s.caption %}<p class="caption">{{ s.caption }}</p>{% endif %}
+      <div class="chart" id="chart-{{ loop.index }}" data-chart="{{ s.key }}" style="height: {{ s.height }}px"></div>
+    </section>
+    {% elif s.type == "table" %}
+    <section class="card">
+      {% if s.title %}<div class="section-title">{{ s.title }}</div>{% endif %}
+      <div class="table-wrap"><table class="data">
+        <thead><tr>{% for c in s.columns %}<th class="{{ 'num' if s.numeric[loop.index0] }}">{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in s.rows %}<tr>{% for v in row %}<td class="{{ 'num' if s.numeric[loop.index0] }}">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table></div>
+      {% if s.more %}<div class="more">共 {{ s.total }} 行，仅展示前 {{ s.rows|length }} 行</div>{% endif %}
+    </section>
+    {% endif %}
+  {% endfor %}
+
+  <footer>由 AI 数据分析助手生成 · 数字以数据源实时查询结果为准</footer>
+</div>
+<script>{{ echarts_js|safe }}</script>
+<script type="application/json" id="charts-data">{{ charts_json|safe }}</script>
+<script type="application/json" id="themes-data">{{ themes_json|safe }}</script>
+<script>
+(function () {
+  var charts = JSON.parse(document.getElementById('charts-data').textContent);
+  var themes = JSON.parse(document.getElementById('themes-data').textContent);
+  echarts.registerTheme('da-light', themes.light);
+  echarts.registerTheme('da-dark', themes.dark);
+  var media = window.matchMedia('(prefers-color-scheme: dark)');
+  var instances = [];
+  function render() {
+    instances.forEach(function (c) { c.dispose(); });
+    instances = [];
+    document.querySelectorAll('[data-chart]').forEach(function (el) {
+      var chart = echarts.init(el, media.matches ? 'da-dark' : 'da-light', { renderer: 'svg' });
+      chart.setOption(charts[el.getAttribute('data-chart')]);
+      instances.push(chart);
+    });
+  }
+  render();
+  media.addEventListener('change', render);
+  window.addEventListener('resize', function () { instances.forEach(function (c) { c.resize(); }); });
+})();
+</script>
+</body>
+</html>
